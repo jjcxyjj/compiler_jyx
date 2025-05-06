@@ -1,4 +1,7 @@
 %option noyywrap yylineno
+%x COMMENT
+%x SINGLELINECOMMENT
+
 %{
 
 #include <string>
@@ -14,9 +17,26 @@ extern int yyline;
 
 %%
 
+"/*"		{BEGIN(COMMENT);}
+<COMMENT>"*/"  {BEGIN(INITIAL);}
+<COMMENT>([^*]|\n)+|.
+<COMMENT><<EOF>>   {printf("Unterminated comment\n"); return 0;}
+"//" {BEGIN(SINGLELINECOMMENT);}
+<SINGLELINECOMMENT>.*
+<SINGLELINECOMMENT>\n {BEGIN(INITIAL);}
+<SINGLELINECOMMENT><<EOF>> {BEGIN(INITIAL);}
+
 [ \t] {}
 \n {yyline++;}
-[0-9]+  {SAVE_TOKEN; return TINTEGER;}
+[1-9][0-9]*|0[0-7]*|(0x|0X)[0-9a-fA-F]*  {SAVE_TOKEN; return TINTEGER;}
+
+[0-9]+[Ee][0-9]+  {SAVE_TOKEN; return TFLOATNUM;}
+[0-9]+[Ee]"+"[0-9]+  {SAVE_TOKEN; return TFLOATNUM;}
+
+[0-9]+[Ee]"-"[0-9]+ {SAVE_TOKEN; return TFLOATNUM;}//here may have problems
+[0-9]*"."[0-9]*[Ee][-+][0-9]+ {SAVE_TOKEN; return TFLOATNUM;}
+[0-9]*"."[0-9]*  {SAVE_TOKEN; return TFLOATNUM;}
+0[Xx][0-9a-fA-F]*"."[0-9a-fA-F]*[Pp][+-][0-9]+ {SAVE_TOKEN; return TFLOATNUM;}
 
 return {return TOKEN(TRETURN);}
 const {return TOKEN(TCONST);}
@@ -42,7 +62,6 @@ while {return TOKEN(TWHILE);}
 
 "-"  {return TOKEN(TMINUS);}
 "!"  {return TOKEN(TNOT);}
-"~"  {return TOKEN(TWAVE);}
 
 "+"  {return TOKEN(TPLUS);}
 "/"  {return TOKEN(TDIV);}
@@ -59,5 +78,6 @@ while {return TOKEN(TWHILE);}
 "||" {return TOKEN(TLOGOR);}
 
 "=" {return TOKEN(TASSIGN);}
+
 <<EOF>> {yyterminate();}
 %%

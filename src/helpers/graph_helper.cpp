@@ -26,7 +26,7 @@ void graph_open(std::string file,graphType gType,std::string name="graph",std::s
         case graphType::ZhuangTaiTu:type="stateDiagram";break;
         case graphType::LeiTu:type="classDiagram";break;
         case graphType::GanTeTu:type="gantt";break;
-        case graphType::BingTu:type="pie";break;          
+        case graphType::BingTu:type="pie";break;
     }
     writeLineToTxt(file,"#### "+name+"");
     writeLineToTxt(file,"###### "+comment+"");
@@ -39,18 +39,18 @@ void graph_open(std::string file,graphType gType,std::string name="graph",std::s
         case graphType::ZhuangTaiTu:type="stateDiagram";break;
         case graphType::LeiTu:type="classDiagram";break;
         case graphType::GanTeTu:type="gantt"; writeLineToTxt(file,"\ttitle "+name+"");break;
-        case graphType::BingTu:type="pie";writeLineToTxt(file,"\ttitle "+name+"");break;          
+        case graphType::BingTu:type="pie";writeLineToTxt(file,"\ttitle "+name+"");break;
     }
 
     //dot
     switch (gType)
-    {  
+    {
         case graphType::LiuChengTu:type="digraph";break;
         case graphType::ShiXuTu:type="digraph";break;
         case graphType::ZhuangTaiTu:type="digraph";break;
         case graphType::LeiTu:type="digraph";break;
         case graphType::GanTeTu:type="digraph";break;
-        case graphType::BingTu:type="digraph";break;          
+        case graphType::BingTu:type="digraph";break;
     }
     writeLineToTxt(file+".txt",type+" "+name+" {");
 }
@@ -93,7 +93,10 @@ void graph::LeiTu_add(std::string s_1,std::string s_2){
     writeLineToTxt(graph::dotPath,"\t"+s_2+"[style = ""filled"", color = ""gray"", fillcolor = ""pink""]");
 }
 void graph::LeiTu_add_attr(std::string s,std::string attr){
-    writeLineToTxt(graph::filePath,"\t"+s+" : "+attr+"");
+    writeLineToTxt(graph::filePath,"\t"+s+" : attr_"+attr+"");
+    writeLineToTxt(graph::dotPath,"\t"+s+"_"+attr+" [style = ""filled"", color = ""gray"", fillcolor = ""gray""]");
+    writeLineToTxt(graph::dotPath,"\t"+s+"->"+s+"_"+attr+" [style = ""filled"", color = ""gray"", fillcolor = ""gray""]");
+
 }
 void graph::ZhuangTaiTu_add(std::string s_1,std::string s_2){
     writeLineToTxt(graph::filePath,"\t"+s_1+" --> "+s_2+"");

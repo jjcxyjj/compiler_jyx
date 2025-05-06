@@ -1,7 +1,7 @@
 %{
-    #include "visitor/syntax_tree_builder.h"
     #include "helpers/type_helper.h"
     #include "syntax_tree.h"
+    #include "utils.h"
     #include "string.h"
     #include "error.h"
     #include "runtime.h"
@@ -14,15 +14,20 @@
     void yyerror(char*s)
     {
         extern char *yytext;	// defined and maintained in lex
-        int len=strlen(yytext);
-        int i;
-        char buf[512]={0};
-        for (i=0;i<len;++i)
-        {
-            sprintf(buf,"%s%d ",buf,yytext[i]);
-        }
+        // int len=strlen(yytext);
+        // int i;
+        char buf[1024]={0};
+        strcpy(buf,yytext);
+        // for (i=0;i<len;++i)
+        // {
+        //     //TODO: may have bugs
+        //     sprintf(buf,"%s%d ",buf,yytext[i]);
+
+        // }
+        // std::string txt = "ERROR: text :"+to
         fprintf(stderr, "ERROR: text %s\n",yytext);
         fprintf(stderr, "ERROR: %s at symbol '%s' on line %d\n", s, buf, yyline);
+        exit(YYERROR);
     }
     void insertVarible(std::string& type,std::string& id);
     void insertFunction(std::string& type,std::string& id);
@@ -45,8 +50,7 @@ tree_var_decl          *var_decl;
 tree_arrray_def        *array_def;
 tree_exp               *exp;
 tree_init_val          *init_val;
-tree_init_val_array    *init_val_array;
-tree_init_val_arraylist *init_val_arraylist;
+tree_init_val_list     *init_val_list;
 tree_func_fparams      *func_fparams;
 tree_func_fparam       *func_fparam;
 tree_func_fparamone    *func_fparamone;
@@ -73,7 +77,7 @@ tree_number            *number;
 tree_primary_exp       *primary_exp;
 tree_unary_exp         *unary_exp;
 tree_func_call         *func_call;
-tree_funcr_paramlist   *funcr_paramlist;
+tree_func_paramlist   *func_param_list;
 tree_mul_exp           *mul_exp;
 tree_add_exp           *add_exp;
 tree_rel_exp           *rel_exp;
@@ -83,10 +87,9 @@ tree_l_or_exp          *l_or_exp;
 
 }
 
-%token <string>        TIDENTIFIER TINTEGER
+%token <string> TIDENTIFIER TINTEGER TFLOATNUM
 %token TSEMICOLOM ";"
 %token TCOMMA   ","
-%token TMAIN    "main"
 %token TINT     "int"
 %token TFLOAT   "float"
 %token TVOID    "void"
@@ -101,7 +104,6 @@ tree_l_or_exp          *l_or_exp;
 %token TRBPAREN "}"
 %token TMINUS   "-"
 %token TNOT     "!"
-%token TWAVE    "~"
 %token TPLUS    "+"
 %token TDIV     "/"
 %token TMOD     "%"
@@ -121,7 +123,7 @@ tree_l_or_exp          *l_or_exp;
 %token TASSIGN  "="
 
 
-%type <comp_unit>        CompUnit
+%type <comp_unit>        CompUnit // ysx
 %type <decl>             Decl
 %type <const_decl>       ConstDecl
 %type <basic_type>       BType
@@ -132,12 +134,13 @@ tree_l_or_exp          *l_or_exp;
 %type <const_init_val>   ConstInitVal
 %type <const_init_val_list>   ConstInitVallist
 %type <var_decl>         VarDecl
+%type <func_call>        FuncCall
+%type <func_param_list>  FuncParamList
 %type <var_def>          VarDef
 %type <var_def_list>     VarDefList
 %type <array_def>        ArrayDef
-%type <init_val>         InitVal
-%type <init_val_array>   InitValArray
-%type <init_val_arraylist>InitValArrayList
+%type <init_val>         InitVal // dyb
+%type <init_val_list>    InitValList
 %type <func_def>         FuncDef
 %type<func_fparams>      FuncFParams
 %type<func_fparam>       FuncFParam
@@ -148,14 +151,12 @@ tree_l_or_exp          *l_or_exp;
 %type <block_item_list>  BlockItemList
 %type <stmt>             Stmt
 %type <cond>             Cond
-%type <number>           Number
+%type <number>           Number // wq
 %type <exp>              Exp
 %type <l_val>            LVal
 %type <array_ident>      ArrayIdent
 %type <primary_exp>      PrimaryExp
 %type <unary_exp>        UnaryExp
-%type <func_call>        FuncCall
-%type <funcr_paramlist>  FuncRParamList
 %type <mul_exp>          MulExp
 %type <add_exp>          AddExp
 %type <rel_exp>          RelExp
@@ -172,23 +173,23 @@ CompUnit
     : FuncDef
         {
             root = new tree_comp_unit();
-		    printf("CompUnit\n");
+            root->_line_no = yyline+1;
+            printf("func def is %s\n",$1->id.c_str());
 		    root->functions.push_back(std::shared_ptr<tree_func_def>($1));
         }
     | CompUnit FuncDef
         {
-		    printf("CompUnit\n");
+            printf("func def is %s\n",$2->id.c_str());
 		    root->functions.push_back(std::shared_ptr<tree_func_def>($2));
         }
     | Decl
         {
             root = new tree_comp_unit();
-		    printf("CompUnit\n");
+            root->_line_no = yyline+1;
             root->definitions.push_back(std::shared_ptr<tree_decl>($1));
         }
     | CompUnit Decl
         {
-		    printf("CompUnit\n");
             root->definitions.push_back(std::shared_ptr<tree_decl>($2));
         }
     ;
@@ -196,14 +197,14 @@ CompUnit
 Decl
     : ConstDecl
         {
-		    printf("Decl\n");
             $$ = new tree_decl();
+            $$->_line_no = yyline+1;
             $$->const_decl=std::shared_ptr<tree_const_decl>($1);
         }
     | VarDecl
         {
-		    printf("Decl\n");
             $$ = new tree_decl();
+            $$->_line_no = yyline+1;
             $$->var_decl=std::shared_ptr<tree_var_decl>($1);
         }
     ;
@@ -211,8 +212,8 @@ Decl
 ConstDecl
     : "const" BType ConstDefList ";"
         {
-		    printf("ConstDecl\n");
             $$ = new tree_const_decl();
+            $$->_line_no = yyline+1;
             $$->b_type=std::shared_ptr<tree_basic_type>($2);
             $$->const_def_list=std::shared_ptr<tree_const_def_list>($3);
         }
@@ -221,13 +222,12 @@ ConstDecl
 ConstDefList
     : ConstDef
         {
-		    printf("ConstDefList\n");
             $$ = new tree_const_def_list();
+            $$->_line_no = yyline+1;
             $$->const_defs.push_back(std::shared_ptr<tree_const_def>($1));
         }
     | ConstDefList "," ConstDef
         {
-		    printf("ConstDefList\n");
             $1->const_defs.push_back(std::shared_ptr<tree_const_def>($3));
             $$ = $1;
         }
@@ -236,20 +236,20 @@ ConstDefList
 BType
     : "int"
         {
-		    printf("BType\n");
             $$ = new tree_basic_type();
+            $$->_line_no = yyline+1;
             $$->type=type_helper::INT;
         };
     | "float"
         {
-		    printf("BType\n");
             $$ = new tree_basic_type();
+            $$->_line_no = yyline+1;
             $$->type=type_helper::FLOAT;
         }
     | "void"
         {
-		    printf("BType\n");
             $$ = new tree_basic_type();
+            $$->_line_no = yyline+1;
             $$->type=type_helper::VOID;
         }
     ;
@@ -257,16 +257,16 @@ BType
 ConstDef
     : TIDENTIFIER ConstExpArrayList "=" ConstInitVal
         {
-		    printf("ConstDef\n");
             $$ = new tree_const_def();
+            $$->_line_no = yyline+1;
             $$->id=*$1;
             $$->const_exp_list=std::shared_ptr<tree_const_exp_list>($2);
             $$->const_init_val=std::shared_ptr<tree_const_init_val>($4);
         }
     | TIDENTIFIER "=" ConstInitVal
         {
-		    printf("ConstDef\n");
             $$ = new tree_const_def();
+            $$->_line_no = yyline+1;
             $$->id=*$1;
             $$->const_init_val=std::shared_ptr<tree_const_init_val>($3);
         }
@@ -275,13 +275,12 @@ ConstDef
 ConstExpArrayList
     : "[" ConstExp "]"
         {
-		    printf("ConstExpArrayList\n");
             $$ = new tree_const_exp_list();
+            $$->_line_no = yyline+1;
             $$->const_exp.push_back(std::shared_ptr<tree_const_exp>($2));
         }
     | ConstExpArrayList "[" ConstExp "]"
         {
-		    printf("ConstExpArrayList\n");
             $1->const_exp.push_back(std::shared_ptr<tree_const_exp>($3));
             $$ = $1;
         }
@@ -290,19 +289,19 @@ ConstExpArrayList
 ConstInitVal
     : ConstExp
         {
-		    printf("ConstInitVal\n");
             $$ = new tree_const_init_val();
+            $$->_line_no = yyline+1;
             $$->const_exp= std::shared_ptr<tree_const_exp>($1) ;
         }
     | "{"  "}"
         {
-		    printf("ConstInitVal\n");
             $$ = new tree_const_init_val();
+            $$->_line_no = yyline+1;
         }
     | "{" ConstInitVallist "}"
         {
-		    printf("ConstInitVal\n");
             $$ = new tree_const_init_val();
+            $$->_line_no = yyline+1;
             $$->const_val_list = std::shared_ptr<tree_const_val_list>($2) ;
         }
     ;
@@ -310,13 +309,12 @@ ConstInitVal
 ConstInitVallist
     : ConstInitVal
         {
-		    printf("ConstInitVallist\n");
             $$ = new tree_const_val_list();
+            $$->_line_no = yyline+1;
             $$->const_init_vals.push_back(std::shared_ptr<tree_const_init_val>($1));
         }
     | ConstInitVallist "," ConstInitVal
         {
-		    printf("ConstInitVallist\n");
             $1->const_init_vals.push_back(std::shared_ptr<tree_const_init_val>($3));
             $$ = $1;
         }
@@ -325,8 +323,8 @@ ConstInitVallist
 ConstExp
     : AddExp
         {
-		    printf("ConstExp\n");
             $$ = new tree_const_exp();
+            $$->_line_no = yyline+1;
             $$->add_exp = std::shared_ptr<tree_add_exp>($1);
         }
     ;
@@ -334,8 +332,8 @@ ConstExp
 VarDecl
     : BType VarDefList ";"
         {
-		    printf("VarDecl\n");
             $$ = new tree_var_decl();
+            $$->_line_no = yyline+1;
             $$->b_type=std::shared_ptr<tree_basic_type>($1);
             $$->var_def_list=std::shared_ptr<tree_var_def_list>($2);
         }
@@ -344,13 +342,12 @@ VarDecl
 VarDefList
     : VarDef
         {
-		    printf("VarDefList\n");
             $$ = new tree_var_def_list();
+            $$->_line_no = yyline+1;
             $$->var_defs.push_back(std::shared_ptr<tree_var_def>($1));
         }
     |  VarDefList "," VarDef
         {
-		    printf("VarDefList\n");
             $1->var_defs.push_back(std::shared_ptr<tree_var_def>($3));
             $$ = $1;
         }
@@ -359,44 +356,43 @@ VarDefList
 VarDef
     : TIDENTIFIER
         {
-		    printf("VarDef\n");
             $$ = new tree_var_def();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
         }
     | TIDENTIFIER "=" InitVal
         {
-		    printf("VarDef\n");
             $$ = new tree_var_def();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
             $$->init_val = std::shared_ptr<tree_init_val>($3);
         };
     | TIDENTIFIER ArrayDef
         {
-		    printf("VarDef\n");
             $$ = new tree_var_def();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
             $$->array_def = std::shared_ptr<tree_arrray_def>($2);
         }
-    | TIDENTIFIER ArrayDef "=" InitValArray
+    | TIDENTIFIER ArrayDef "=" InitVal
         {
-		    printf("VarDef\n");
             $$ = new tree_var_def();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
             $$->array_def = std::shared_ptr<tree_arrray_def>($2);
-            $$->init_val_array = std::shared_ptr<tree_init_val_array>($4);
+            $$->init_val = std::shared_ptr<tree_init_val>($4);
         }
     ;
 
 ArrayDef
     : "[" ConstExp "]"
         {
-		    printf("ArrayDef\n");
             $$ = new tree_arrray_def();
+            $$->_line_no = yyline+1;
             $$->const_exps.push_back(std::shared_ptr<tree_const_exp>($2));
         }
     | ArrayDef "[" ConstExp "]"
         {
-		    printf("ArrayDef\n");
             $$->const_exps.push_back(std::shared_ptr<tree_const_exp>($3));
             $$ = $1;
         }
@@ -406,68 +402,47 @@ ArrayDef
 InitVal
     : Exp
         {
-		    printf("InitVal\n");
             $$ = new tree_init_val();
+            $$->_line_no = yyline+1;
             $$->exp=std::shared_ptr<tree_exp>($1);
         }
+    | "{" "}" {
+            $$ = new tree_init_val();
+            $$->_line_no = yyline+1;
+    }
+    | "{" InitValList "}" {
+            $$ = new tree_init_val();
+            $$->_line_no = yyline+1;
+            $$->init_val_list = std::shared_ptr<tree_init_val_list>($2);
+    }
     ;
 
-InitValArray
-    : "{" "}"
-        {
-		    printf("InitValArray\n");
-            $$ = new tree_init_val_array();
-        }
-    | "{" InitValArrayList "}"
-        {
-		    printf("InitValArray\n");
-            $$ = new tree_init_val_array();
-            $$->init_val_arraylist = std::shared_ptr<tree_init_val_arraylist>($2);
-        }
-    ;
-
-// InitValArrayList是InitVal(AddExp)和InitValArray的任意组合
-InitValArrayList
-    : InitValArray
-        {
-		    printf("InitValArrayList\n");
-            $$ = new tree_init_val_arraylist();
-            $$->initvalarrays.push_back(std::shared_ptr<tree_init_val_array>($1));
-        }
-    | InitValArrayList "," InitValArray
-        {
-		    printf("InitValArrayList\n");
-            $1->initvalarrays.push_back(std::shared_ptr<tree_init_val_array>($3));
-            $$ = $1;
-        }
-    | InitVal
-        {
-		    printf("InitValArrayList\n");
-            $$ = new tree_init_val_arraylist();
-            $$->initvals.push_back(std::shared_ptr<tree_init_val>($1));
-        }
-    | InitValArrayList "," InitVal
-        {
-		    printf("InitValArrayList\n");
-            $1->initvals.push_back(std::shared_ptr<tree_init_val>($3));
-            $$ = $1;
-        }
+InitValList
+    : InitVal {
+        $$ = new tree_init_val_list();
+        $$->_line_no = yyline+1;
+        $$->init_vals.push_back(std::shared_ptr<tree_init_val>($1));
+    }
+    | InitValList "," InitVal {
+        $1->init_vals.push_back(std::shared_ptr<tree_init_val>($3));
+        $$ = $1;
+    }
     ;
 
 /* 函数相关 */
 FuncDef
     : BType TIDENTIFIER "("")" Block
         {
-		    printf("FuncDef\n");
             $$ = new tree_func_def();
+            $$->_line_no = yyline+1;
             $$->type = std::shared_ptr<tree_basic_type>($1);
             $$->id = *$2;
             $$->block.push_back(std::shared_ptr<tree_block>($5));
         }
     | BType TIDENTIFIER "(" FuncFParams ")" Block
         {
-		    printf("FuncDef\n");
             $$ = new tree_func_def();
+            $$->_line_no = yyline+1;
             $$->type = std::shared_ptr<tree_basic_type>($1);
             $$->id = *$2;
             $$->funcfparams = std::shared_ptr<tree_func_fparams>($4);
@@ -479,13 +454,12 @@ FuncDef
 FuncFParams
     : FuncFParam
         {
-		    printf("FuncFParams\n");
             $$ = new tree_func_fparams();
+            $$->_line_no = yyline+1;
             $$->funcfparamlist.push_back(std::shared_ptr<tree_func_fparam>($1));
         }
     | FuncFParams "," FuncFParam
         {
-		    printf("FuncFParams\n");
             $1->funcfparamlist.push_back(std::shared_ptr<tree_func_fparam>($3));
             $$ = $1;
         }
@@ -494,14 +468,14 @@ FuncFParams
 FuncFParam
     : FuncFParamOne
         {
-		    printf("FuncFParam\n");
             $$ = new tree_func_fparam();
+            $$->_line_no = yyline+1;
             $$->funcfparamone = std::shared_ptr<tree_func_fparamone>($1);
         }
     | FuncFParamArray
         {
-		    printf("FuncFParam\n");
             $$ = new tree_func_fparam();
+            $$->_line_no = yyline+1;
             $$->funcfparamarray = std::shared_ptr<tree_func_fparamarray>($1);
         }
     ;
@@ -509,8 +483,8 @@ FuncFParam
 FuncFParamOne
     : BType TIDENTIFIER
         {
-		    printf("FuncFParamOne\n");
             $$ = new tree_func_fparamone();
+            $$->_line_no = yyline+1;
             $$->b_type = std::shared_ptr<tree_basic_type>($1);
             $$->id = *$2;
         }
@@ -519,14 +493,13 @@ FuncFParamOne
 FuncFParamArray
     : BType TIDENTIFIER "[" "]"
         {
-		    printf("FuncFParamArray\n");
             $$ = new tree_func_fparamarray();
+            $$->_line_no = yyline+1;
             $$->b_type = std::shared_ptr<tree_basic_type>($1);
             $$->id = *$2;
         }
     | FuncFParamArray "[" Exp "]"
         {
-		    printf("FuncFParamArray\n");
             $1->exps.push_back(std::shared_ptr<tree_exp>($3));
             $$ = $1;
         }
@@ -535,13 +508,13 @@ FuncFParamArray
 Block
     : "{" "}"
         {
-		    printf("Block\n");
             $$ = new tree_block();
+            $$->_line_no = yyline+1;
         }
     | "{" BlockItemList "}"
         {
-		    printf("Block\n");
             $$ = new tree_block();
+            $$->_line_no = yyline+1;
             $$->block_item_list=std::shared_ptr<tree_block_item_list>($2);
         }
     ;
@@ -549,13 +522,12 @@ Block
 BlockItemList
     : BlockItem
         {
-		    printf("BlockItemList\n");
             $$ = new tree_block_item_list();
+            $$->_line_no = yyline+1;
             $$->block_items.push_back(std::shared_ptr<tree_block_item>($1));
         }
     |  BlockItemList BlockItem
         {
-		    printf("BlockItemList\n");
             $1->block_items.push_back(std::shared_ptr<tree_block_item>($2));
             $$=$1;
         }
@@ -564,14 +536,14 @@ BlockItemList
 BlockItem
     : Decl
         {
-		    printf("BlockItem\n");
             $$ = new tree_block_item();
+            $$->_line_no = yyline+1;
             $$->decl=std::shared_ptr<tree_decl>($1);
         }
     | Stmt
         {
-		    printf("BlockItem\n");
             $$ = new tree_block_item();
+            $$->_line_no = yyline+1;
             $$->stmt=std::shared_ptr<tree_stmt>($1);
         }
     ;
@@ -581,8 +553,8 @@ Stmt
     : LVal "=" Exp ";"
         /* assign statement */
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto a_stmt = new tree_assign_stmt();
             a_stmt->l_val=std::shared_ptr<tree_l_val>($1);
             a_stmt->exp=std::shared_ptr<tree_exp>($3);
@@ -590,26 +562,26 @@ Stmt
         }
     | ";"
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
         }
     | Exp ";"
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             $$->exp=std::shared_ptr<tree_exp>($1) ;
         }
     | Block
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             $$->block=std::shared_ptr<tree_block>($1) ;
         }
     /* if statement */
     | "if" "(" Cond ")" Stmt
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto if_stmt = new tree_if_stmt();
             if_stmt->cond = std::shared_ptr<tree_cond>($3);
             if_stmt->stmt = std::shared_ptr<tree_stmt>($5);
@@ -617,20 +589,20 @@ Stmt
         }
     | "if" "(" Cond ")" Stmt "else" Stmt
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto if_else_stmt = new tree_if_else_stmt();
             if_else_stmt->cond = std::shared_ptr<tree_cond>($3);
-            if_else_stmt->stmt1 = std::shared_ptr<tree_stmt>($5);
-            if_else_stmt->stmt2 = std::shared_ptr<tree_stmt>($7);
+            if_else_stmt->then_stmt = std::shared_ptr<tree_stmt>($5);
+            if_else_stmt->else_stmt = std::shared_ptr<tree_stmt>($7);
             $$->if_else_stmt = std::shared_ptr<tree_if_else_stmt>(if_else_stmt) ;
 
         }
     /* while statement */
     | "while" "(" Cond ")" Stmt
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto while_stmt = new tree_while_stmt();
             while_stmt->cond = std::shared_ptr<tree_cond>($3);
             while_stmt->stmt = std::shared_ptr<tree_stmt>($5);
@@ -638,30 +610,30 @@ Stmt
         }
     | "continue" ";"
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto continue_stmt = new tree_continue_stmt();
             $$->continue_stmt = std::shared_ptr<tree_continue_stmt>(continue_stmt) ;
         }
     | "break" ";"
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto break_stmt = new tree_break_stmt();
             $$->break_stmt = std::shared_ptr<tree_break_stmt>(break_stmt) ;
         }
     /* return statement */
     | "return" ";"
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto a_stmt = new tree_return_null_stmt();
             $$->return_null_stmt=std::shared_ptr<tree_return_null_stmt>(a_stmt) ;
         }
     | "return" Exp ";"
         {
-		    printf("Stmt\n");
             $$ = new tree_stmt();
+            $$->_line_no = yyline+1;
             auto a_stmt = new tree_return_stmt();
             a_stmt->exp=std::shared_ptr<tree_exp>($2);
             $$->return_stmt=std::shared_ptr<tree_return_stmt>(a_stmt) ;
@@ -672,8 +644,8 @@ Stmt
 Exp
     : AddExp
         {
-		    printf("Exp\n");
             $$ = new tree_exp();
+            $$->_line_no = yyline+1;
             $$->add_exp = std::shared_ptr<tree_add_exp>($1);
         }
     ;
@@ -681,8 +653,8 @@ Exp
 Cond
     : LOrExp
         {
-		    printf("Cond\n");
             $$ = new tree_cond();
+            $$->_line_no = yyline+1;
             $$->l_or_exp = std::shared_ptr<tree_l_or_exp>($1);
         }
     ;
@@ -690,14 +662,14 @@ Cond
 LVal
     : TIDENTIFIER
         {
-		    printf("LVal\n");
             $$ = new tree_l_val();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
         }
     | ArrayIdent
         {
-		    printf("LVal\n");
             $$ = new tree_l_val();
+            $$->_line_no = yyline+1;
             $$->array_ident = std::shared_ptr<tree_array_ident>($1);
         }
     ;
@@ -705,15 +677,14 @@ LVal
 ArrayIdent
     : TIDENTIFIER "[" Exp "]"
         {
-		    printf("ArrayIdent\n");
             $$ = new tree_array_ident();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
-            $$->exp = std::shared_ptr<tree_exp>($3);
+            $$->exps.push_back(std::shared_ptr<tree_exp>($3));
         }
     | ArrayIdent "[" Exp "]"
         {
-		    printf("ArrayIdent\n");
-            $1->exp = std::shared_ptr<tree_exp>($3);
+            $1->exps.push_back(std::shared_ptr<tree_exp>($3));
             $$ = $1;
         }
     ;
@@ -721,30 +692,37 @@ ArrayIdent
 Number
     : TINTEGER
         {
-		    printf("Number\n");
             $$ = new tree_number();
-            $$->int_value = atoi($1->c_str());
+            $$->_line_no = yyline+1;
+            $$->int_value = std::stoi($1->c_str(), nullptr, 0);
+            $$->is_int=true;
+        }
+    | TFLOATNUM
+        {
+            $$ = new tree_number();
+            $$->_line_no = yyline+1;
             $$->float_value = (float)atof($1->c_str());
+            $$->is_int=false;
         }
     ;
 
 PrimaryExp
     : "(" Exp ")"
         {
-		    printf("PrimaryExp\n");
             $$ = new tree_primary_exp();
+            $$->_line_no = yyline+1;
             $$->exp = std::shared_ptr<tree_exp>($2);
         }
     | LVal
         {
-		    printf("PrimaryExp\n");
             $$ = new tree_primary_exp();
+            $$->_line_no = yyline+1;
             $$->l_val = std::shared_ptr<tree_l_val>($1);
         }
     | Number
         {
-		    printf("PrimaryExp\n");
             $$ = new tree_primary_exp();
+            $$->_line_no = yyline+1;
             $$->number = std::shared_ptr<tree_number>($1);
         }
     ;
@@ -752,36 +730,36 @@ PrimaryExp
 UnaryExp
     : PrimaryExp
         {
-		    printf("UnaryExp\n");
             $$ = new tree_unary_exp();
+            $$->_line_no = yyline+1;
             $$->primary_exp = std::shared_ptr<tree_primary_exp>($1);
         }
     | "+" UnaryExp
         {
-		    printf("UnaryExp\n");
             $$ = new tree_unary_exp();
+            $$->_line_no = yyline+1;
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($2);
             $$->oprt="+";
         }
     | "-" UnaryExp
         {
-		    printf("UnaryExp\n");
             $$ = new tree_unary_exp();
+            $$->_line_no = yyline+1;
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($2);
             $$->oprt="-";
         }
     | "!" UnaryExp
         {
-		    printf("UnaryExp\n");
             $$ = new tree_unary_exp();
+            $$->_line_no = yyline+1;
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($2);
             $$->oprt="!";
         };
     /* FUNCTION CALL */
     | FuncCall
         {
-		    printf("FuncCall\n");
             $$ = new tree_unary_exp();
+            $$->_line_no = yyline+1;
             $$->func_call = std::shared_ptr<tree_func_call>($1);
         }
     ;
@@ -789,29 +767,28 @@ UnaryExp
 FuncCall
     : TIDENTIFIER "(" ")"
         {
-		    printf("FuncCall\n");
             $$ = new tree_func_call();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
         }
-    | TIDENTIFIER "(" FuncRParamList ")"
+    | TIDENTIFIER "(" FuncParamList ")"
         {
-		    printf("FuncCall\n");
             $$ = new tree_func_call();
+            $$->_line_no = yyline+1;
             $$->id = *$1;
-            $$->funcr_paramlist = std::shared_ptr<tree_funcr_paramlist>($3);
+            $$->func_param_list = std::shared_ptr<tree_func_paramlist>($3);
         }
     ;
 
-FuncRParamList
+FuncParamList
     : Exp
         {
-		    printf("FuncRParamList\n");
-            $$ = new tree_funcr_paramlist();
+            $$ = new tree_func_paramlist();
+            $$->_line_no = yyline+1;
             $$->exps.push_back(std::shared_ptr<tree_exp>($1));
         }
-    | FuncRParamList "," Exp
+    | FuncParamList "," Exp
         {
-		    printf("FuncRParamList\n");
             $1->exps.push_back(std::shared_ptr<tree_exp>($3));
             $$ = $1;
         }
@@ -822,30 +799,30 @@ FuncRParamList
 MulExp
     : UnaryExp
         {
-		    printf("MulExp\n");
             $$ = new tree_mul_exp();
+            $$->_line_no = yyline+1;
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($1);
         }
     | MulExp "*" UnaryExp
         {
-		    printf("MulExp\n");
             $$ = new tree_mul_exp();
+            $$->_line_no = yyline+1;
             $$->mul_exp=std::shared_ptr<tree_mul_exp>($1);
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($3);
             $$->oprt="*";
         }
     | MulExp "/" UnaryExp
         {
-		    printf("MulExp\n");
             $$ = new tree_mul_exp();
+            $$->_line_no = yyline+1;
             $$->mul_exp=std::shared_ptr<tree_mul_exp>($1);
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($3);
             $$->oprt="/";
         }
     | MulExp "%" UnaryExp
         {
-		    printf("MulExp\n");
             $$ = new tree_mul_exp();
+            $$->_line_no = yyline+1;
             $$->mul_exp=std::shared_ptr<tree_mul_exp>($1);
             $$->unary_exp=std::shared_ptr<tree_unary_exp>($3);
             $$->oprt="%";
@@ -854,22 +831,22 @@ MulExp
 AddExp
     : MulExp
         {
-		    printf("AddExp\n");
             $$ = new tree_add_exp();
+            $$->_line_no = yyline+1;
             $$->mul_exp=std::shared_ptr<tree_mul_exp>($1);
         }
     | AddExp "+" MulExp
         {
-		    printf("AddExp\n");
             $$ = new tree_add_exp();
+            $$->_line_no = yyline+1;
             $$->add_exp=std::shared_ptr<tree_add_exp>($1);
             $$->oprt="+";
             $$->mul_exp=std::shared_ptr<tree_mul_exp>($3);
         }
     | AddExp "-" MulExp
         {
-		    printf("AddExp\n");
             $$ = new tree_add_exp();
+            $$->_line_no = yyline+1;
             $$->add_exp=std::shared_ptr<tree_add_exp>($1);
             $$->oprt="-";
             $$->mul_exp=std::shared_ptr<tree_mul_exp>($3);
@@ -878,38 +855,38 @@ AddExp
 RelExp
     : AddExp
         {
-		    printf("RelExp\n");
             $$ = new tree_rel_exp();
+            $$->_line_no = yyline+1;
             $$->add_exp=std::shared_ptr<tree_add_exp>($1);
         }
     | RelExp "<" AddExp
         {
-		    printf("RelExp\n");
             $$ = new tree_rel_exp();
+            $$->_line_no = yyline+1;
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($1);
             $$->oprt="<";
             $$->add_exp=std::shared_ptr<tree_add_exp>($3);
         }
     | RelExp ">" AddExp
         {
-		    printf("RelExp\n");
             $$ = new tree_rel_exp();
+            $$->_line_no = yyline+1;
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($1);
             $$->oprt=">";
             $$->add_exp=std::shared_ptr<tree_add_exp>($3);
         }
     | RelExp "<=" AddExp
         {
-		    printf("RelExp\n");
             $$ = new tree_rel_exp();
+            $$->_line_no = yyline+1;
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($1);
             $$->oprt="<=";
             $$->add_exp=std::shared_ptr<tree_add_exp>($3);
         }
     | RelExp ">=" AddExp
         {
-		    printf("RelExp\n");
             $$ = new tree_rel_exp();
+            $$->_line_no = yyline+1;
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($1);
             $$->oprt=">=";
             $$->add_exp=std::shared_ptr<tree_add_exp>($3);
@@ -918,22 +895,22 @@ RelExp
 EqExp
     : RelExp
         {
-		    printf("EqExp\n");
             $$ = new tree_eq_exp();
+            $$->_line_no = yyline+1;
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($1);
         }
     | EqExp "==" RelExp
         {
-		    printf("EqExp\n");
             $$ = new tree_eq_exp();
+            $$->_line_no = yyline+1;
             $$->eq_exp=std::shared_ptr<tree_eq_exp>($1);
             $$->oprt="==";
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($3);
         }
     | EqExp "!=" RelExp
         {
-		    printf("EqExp\n");
             $$ = new tree_eq_exp();
+            $$->_line_no = yyline+1;
             $$->eq_exp=std::shared_ptr<tree_eq_exp>($1);
             $$->oprt="!=";
             $$->rel_exp=std::shared_ptr<tree_rel_exp>($3);
@@ -942,14 +919,14 @@ EqExp
 LAndExp
     : EqExp
         {
-		    printf("LAndExp\n");
             $$ = new tree_l_and_exp();
+            $$->_line_no = yyline+1;
             $$->eq_exp=std::shared_ptr<tree_eq_exp>($1);
         }
     | LAndExp "&&" EqExp
         {
-		    printf("LAndExp\n");
             $$ = new tree_l_and_exp();
+            $$->_line_no = yyline+1;
             $$->l_and_exp=std::shared_ptr<tree_l_and_exp>($1);
             $$->eq_exp=std::shared_ptr<tree_eq_exp>($3);
         }
@@ -957,14 +934,14 @@ LAndExp
 LOrExp
     : LAndExp
         {
-		    printf("LOrExp\n");
             $$ = new tree_l_or_exp();
+            $$->_line_no = yyline+1;
             $$->l_and_exp=std::shared_ptr<tree_l_and_exp>($1);
         }
     | LOrExp "||" LAndExp
         {
-		    printf("LOrExp\n");
             $$ = new tree_l_or_exp();
+            $$->_line_no = yyline+1;
             $$->l_or_exp=std::shared_ptr<tree_l_or_exp>($1);
             $$->l_and_exp=std::shared_ptr<tree_l_and_exp>($3);
         }
